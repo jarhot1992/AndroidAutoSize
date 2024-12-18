@@ -1,15 +1,12 @@
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion rootProject.compileSdkVersion
-    buildToolsVersion rootProject.buildToolsVersion
+    compileSdk = rootProject.ext.compileSdkVersion
+    namespace "me.jessyan.autosize"
 
     defaultConfig {
-        minSdkVersion rootProject.minSdkVersion
-        targetSdkVersion rootProject.targetSdkVersion
-        versionCode rootProject.versionCode
-        versionName rootProject.versionName
-        consumerProguardFiles 'proguard-rules.pro'
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
     }
 
     buildTypes {
@@ -26,8 +23,5 @@ android {
 }
 
 dependencies {
-    compileOnly rootProject.appcompat_v7
-    compileOnly rootProject.androidx_appcompat
+    compileOnly "androidx.appcompat:appcompat:1.7.0"
 }
-
-apply from: 'bintray.gradle'
