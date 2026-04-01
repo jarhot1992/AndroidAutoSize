@@ -18,11 +18,13 @@ package me.jessyan.autosize.utils;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.WindowManager;
+import android.view.WindowMetrics;
 
 /**
  * ================================================
@@ -59,13 +61,22 @@ public class ScreenUtils {
     public static int[] getScreenSize(Context context) {
         int[] size = new int[2];
 
-        WindowManager w = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-        Display d = w.getDefaultDisplay();
-        DisplayMetrics metrics = new DisplayMetrics();
-        d.getMetrics(metrics);
+        WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
 
-        size[0] = metrics.widthPixels;
-        size[1] = metrics.heightPixels;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowMetrics metrics = wm.getCurrentWindowMetrics();
+            Rect bounds = metrics.getBounds();
+
+            size[0] = bounds.width();
+            size[1] = bounds.height();
+        } else {
+            DisplayMetrics metrics = new DisplayMetrics();
+            wm.getDefaultDisplay().getRealMetrics(metrics);
+
+            size[0] = metrics.widthPixels;
+            size[1] = metrics.heightPixels;
+        }
+
         return size;
     }
 
