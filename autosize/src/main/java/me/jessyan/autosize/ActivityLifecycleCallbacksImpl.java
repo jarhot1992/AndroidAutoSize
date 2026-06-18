@@ -62,6 +62,7 @@ public class ActivityLifecycleCallbacksImpl implements Application.ActivityLifec
 
         //Activity 中的 setContentView(View) 一定要在 super.onCreate(Bundle); 之后执行
         if (mAutoAdaptStrategy != null) {
+            AutoSizeConfig.getInstance().refreshScreenSize(activity);
             mAutoAdaptStrategy.applyAdapt(activity, activity);
         }
     }
@@ -69,13 +70,17 @@ public class ActivityLifecycleCallbacksImpl implements Application.ActivityLifec
     @Override
     public void onActivityStarted(Activity activity) {
         if (mAutoAdaptStrategy != null) {
+            AutoSizeConfig.getInstance().refreshScreenSize(activity);
             mAutoAdaptStrategy.applyAdapt(activity, activity);
         }
     }
 
     @Override
     public void onActivityResumed(Activity activity) {
-
+        if (mAutoAdaptStrategy != null) {
+            AutoSizeConfig.getInstance().refreshScreenSize(activity);
+            mAutoAdaptStrategy.applyAdapt(activity, activity);
+        }
     }
 
     @Override

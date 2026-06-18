@@ -47,6 +47,10 @@ public final class AutoSizeCompat {
         throw new IllegalStateException("you can't instantiate me!");
     }
 
+    static void clearCache() {
+        mCache.clear();
+    }
+
     /**
      * 使用 AndroidAutoSize 初始化时设置的默认适配参数进行适配 (AndroidManifest 的 Meta 属性)
      *

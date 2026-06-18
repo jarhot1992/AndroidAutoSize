@@ -19,10 +19,12 @@ import android.app.Activity;
 import android.app.Application;
 import android.content.ComponentCallbacks;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.os.Build;
 import android.util.DisplayMetrics;
 
 import java.lang.reflect.Field;
@@ -244,9 +246,7 @@ public final class AutoSizeConfig {
 
         getMetaData(application);
         isVertical = application.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
-        int[] screenSize = ScreenUtils.getScreenSize(application);
-        mScreenWidth = screenSize[0];
-        mScreenHeight = screenSize[1];
+        refreshScreenSize(application);
         mStatusBarHeight = ScreenUtils.getStatusBarHeight();
         AutoSizeLog.d("designWidthInDp = " + mDesignWidthInDp + ", designHeightInDp = " + mDesignHeightInDp + ", screenWidth = " + mScreenWidth + ", screenHeight = " + mScreenHeight);
 
@@ -266,9 +266,7 @@ public final class AutoSizeConfig {
                         AutoSizeLog.d("initScaledDensity = " + mInitScaledDensity + " on ConfigurationChanged");
                     }
                     isVertical = newConfig.orientation == Configuration.ORIENTATION_PORTRAIT;
-                    int[] screenSize = ScreenUtils.getScreenSize(application);
-                    mScreenWidth = screenSize[0];
-                    mScreenHeight = screenSize[1];
+                    refreshScreenSize(application);
                 }
             }
 
@@ -465,6 +463,143 @@ public final class AutoSizeConfig {
      */
     public int getScreenHeight() {
         return isUseDeviceSize() ? mScreenHeight : mScreenHeight - mStatusBarHeight;
+    }
+
+    /**
+     * Refreshes the screen size used by density calculation.
+     * Boot and screen-off launches can report a transient window size before the
+     * Activity window is ready. Keeping the last usable full-screen size prevents
+     * AndroidAutoSize from caching a too-small density that makes all UI shrink.
+     */
+    public boolean refreshScreenSize(Context context) {
+        Preconditions.checkNotNull(context, "context == null");
+        int[] screenSize = ScreenUtils.getScreenSize(context);
+        boolean allowRawFallback = shouldUseRawScreenSize(context);
+        applyRawScreenSizeIfNeeded(screenSize, ScreenUtils.getRawScreenSize(context), allowRawFallback);
+        normalizeScreenSizeForContext(context, screenSize);
+        return updateScreenSize(screenSize[0], screenSize[1], allowRawFallback);
+    }
+
+    private static boolean shouldUseRawScreenSize(Context context) {
+        if (context instanceof Activity && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            Activity activity = (Activity) context;
+            return !activity.isInMultiWindowMode() && !activity.isInPictureInPictureMode();
+        }
+        return true;
+    }
+
+    static void applyRawScreenSizeIfNeeded(int[] windowSize, int[] rawSize, boolean allowRawFallback) {
+        if (!allowRawFallback || !isUsableScreenSize(rawSize)) {
+            return;
+        }
+        if (!isUsableScreenSize(windowSize)) {
+            windowSize[0] = rawSize[0];
+            windowSize[1] = rawSize[1];
+            return;
+        }
+        int windowLongSide = Math.max(windowSize[0], windowSize[1]);
+        int windowShortSide = Math.min(windowSize[0], windowSize[1]);
+        int rawLongSide = Math.max(rawSize[0], rawSize[1]);
+        int rawShortSide = Math.min(rawSize[0], rawSize[1]);
+        // Android TV launcher is full-screen. During screen-off/boot launch,
+        // currentWindowMetrics may report a temporary half-width/half-height
+        // window; use the raw display size so AutoSize does not cache it.
+        boolean shouldUseRawSize = rawLongSide >= windowLongSide && rawShortSide >= windowShortSide
+                && (windowLongSide * 4 < rawLongSide * 3
+                || windowShortSide * 4 < rawShortSide * 3);
+        if (shouldUseRawSize) {
+            windowSize[0] = rawSize[0];
+            windowSize[1] = rawSize[1];
+        }
+    }
+
+    private static boolean isUsableScreenSize(int[] size) {
+        return size != null && size.length >= 2 && isUsableScreenSize(size[0], size[1]);
+    }
+
+    private static void normalizeScreenSizeForContext(Context context, int[] screenSize) {
+        if (!isUsableScreenSize(screenSize[0], screenSize[1])) {
+            return;
+        }
+        int orientation = getRequestedOrientation(context);
+        // Landscape launcher activities may be created while AOD still reports
+        // the raw portrait display. Normalize before the first density apply so
+        // setContentView/Dialog inflation does not bake in a half-size density.
+        if (isLandscapeOrientation(orientation)) {
+            normalizeScreenSize(screenSize, false);
+        } else if (isPortraitOrientation(orientation)) {
+            normalizeScreenSize(screenSize, true);
+        }
+    }
+
+    private static int getRequestedOrientation(Context context) {
+        if (context instanceof Activity) {
+            return ((Activity) context).getRequestedOrientation();
+        }
+        return ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+    }
+
+    static void normalizeScreenSize(int[] screenSize, boolean portrait) {
+        int longSide = Math.max(screenSize[0], screenSize[1]);
+        int shortSide = Math.min(screenSize[0], screenSize[1]);
+        screenSize[0] = portrait ? shortSide : longSide;
+        screenSize[1] = portrait ? longSide : shortSide;
+    }
+
+    private static boolean isLandscapeOrientation(int orientation) {
+        return orientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                || orientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                || orientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                || orientation == ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE;
+    }
+
+    private static boolean isPortraitOrientation(int orientation) {
+        return orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                || orientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+                || orientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                || orientation == ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT;
+    }
+
+    private boolean updateScreenSize(int width, int height, boolean rejectUnstableSmallSize) {
+        if (!shouldAcceptScreenSize(mScreenWidth, mScreenHeight, width, height, rejectUnstableSmallSize)) {
+            AutoSizeLog.w("Ignore unstable screen size: " + width + "x" + height
+                    + ", current = " + mScreenWidth + "x" + mScreenHeight);
+            return false;
+        }
+        if (mScreenWidth == width && mScreenHeight == height) {
+            return false;
+        }
+        mScreenWidth = width;
+        mScreenHeight = height;
+        AutoSize.clearCache();
+        AutoSizeCompat.clearCache();
+        return true;
+    }
+
+    static boolean isUsableScreenSize(int width, int height) {
+        return width > 0 && height > 0;
+    }
+
+    static boolean shouldAcceptScreenSize(int currentWidth, int currentHeight, int candidateWidth, int candidateHeight) {
+        return shouldAcceptScreenSize(currentWidth, currentHeight, candidateWidth, candidateHeight, true);
+    }
+
+    static boolean shouldAcceptScreenSize(int currentWidth, int currentHeight, int candidateWidth, int candidateHeight, boolean rejectUnstableSmallSize) {
+        if (!isUsableScreenSize(candidateWidth, candidateHeight)) {
+            return false;
+        }
+        if (!isUsableScreenSize(currentWidth, currentHeight)) {
+            return true;
+        }
+        if (!rejectUnstableSmallSize) {
+            return true;
+        }
+        int currentLongSide = Math.max(currentWidth, currentHeight);
+        int currentShortSide = Math.min(currentWidth, currentHeight);
+        int candidateLongSide = Math.max(candidateWidth, candidateHeight);
+        int candidateShortSide = Math.min(candidateWidth, candidateHeight);
+        return candidateLongSide * 4 >= currentLongSide * 3
+                && candidateShortSide * 4 >= currentShortSide * 3;
     }
 
     /**

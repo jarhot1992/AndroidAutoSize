@@ -60,6 +60,10 @@ public final class AutoSize {
         throw new IllegalStateException("you can't instantiate me!");
     }
 
+    static void clearCache() {
+        mCache.clear();
+    }
+
     /**
      * 检查 AndroidAutoSize 是否已经初始化
      *
