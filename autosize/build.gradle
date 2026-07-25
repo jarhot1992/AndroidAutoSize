@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 
 android {
     compileSdk = rootProject.ext.compileSdkVersion
-    namespace "me.jessyan.autosize"
+    namespace = "me.jessyan.autosize"
 
     defaultConfig {
         minSdkVersion rootProject.ext.minSdkVersion
@@ -11,13 +11,13 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled = false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
     lintOptions {
-        abortOnError false
+        abortOnError = false
         warning 'InvalidPackage'
     }
 }
